@@ -11,7 +11,5 @@ download the louisgjbertrand_Maya_Antivirus.py and put it in the `<user>\Documen
 # Dependencies and tools used
 
 RickHulzinga / MayaVaccineVirusRemovalTool:
-
-a script that is executed on scene loading. initially in userSetup.py but for safety reasons maya does not execute it.
-
-https://github.com/RickHulzinga/MayaVaccineVirusRemovalTool
+  - a script that is executed on scene loading. initially in userSetup.py but for safety reasons maya does not execute it.
+  - https://github.com/RickHulzinga/MayaVaccineVirusRemovalTool
