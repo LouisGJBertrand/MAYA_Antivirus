@@ -1,0 +1,20 @@
+Reporting:
+    Class:
+        Variables:
+            - MAYA_FileName - done
+            - MAYA_AppName - done
+            - MAYA_BatchMod - done
+            - MAYA_CustomVersion - done
+            - MAYA_Version - done
+
+            - ANTIVIRUS_DATA_DIR - done
+
+            - SCAN_Date - done
+            - SCAN_Time - done
+            - SCAN_Positivity - done
+            - SCAN_Log - done
+
+
+
+        - Export Function
+        - Record Function

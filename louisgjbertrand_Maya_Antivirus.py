@@ -1,58 +1,45 @@
-from asyncio.windows_events import NULL
 
+from email.errors import MessageError
 import os
+import shutil
 import sys
-import asyncio
+import webbrowser
+import requests
+import hashlib
+import json
+
+from asyncio.windows_events import NULL
 
 import maya.cmds as cmds
 import maya.OpenMayaMPx as OpenMayaMPx
-import threading
 
 PLUGIN_NAME = "Maya Antivirus Autoscan"
 PLUGIN_COMPANY = "Louis BERTRAND"
-PLUGIN_VERSION = "v0.0.0"
+PLUGIN_VERSION = "v0.0.1"
 PLUGIN_EXT_DEPEDENCIES = "github@RickHulzinga/MayaVaccineVirusRemovalTool"
 
 ANTIVIRUS_OBJECT = NULL
 
-class ScanResult():
+class ScanReport():
 
-    VaccineTrace = False
-    VaccineTrace_Script = False
-    VaccineTrace_Script_Cached = False
-    VaccineTrace_Script_VersionSpecific = False
-    VaccineTrace_Script_VersionSpecific_Cached = False
-    VaccineTrace_Vaccine_OR_Breed_Node = False
+    MAYA_FileName = NULL
+    MAYA_AppName = NULL
+    MAYA_BatchMod = NULL
+    MAYA_CustomVersion = NULL
+    MAYA_Version = NULL
 
-    def __repr__(self):
-        return "ScanResult()"
-    def __str__(self):
-        return "member of ScanResult"
+    ANTIVIRUS_DATA_DIR = cmds.internalVar(userAppDir=True) + "00_MAYA_ANTIVIRUS"
 
-    def Log(self):
-        outputString = " \n"
-        outputString += " -+--------------------------------------------------------------------+-\n"
-        outputString += " \n"
-        outputString += "Antivirus Scan Report\n"
-        outputString += " \n"
-        outputString += "VaccineTrace: "+str(self.VaccineTrace)+"\n"
-        outputString += "+ VaccineTrace_Script: "+str(self.VaccineTrace_Script)+"\n"
-        outputString += "+ VaccineTrace_Script_Cached: "+str(self.VaccineTrace_Script_Cached)+"\n"
-        outputString += "+ VaccineTrace_Script_VersionSpecific: "+str(self.VaccineTrace_Script_VersionSpecific)+"\n"
-        outputString += "+ VaccineTrace_Script_VersionSpecific_Cached: "+str(self.VaccineTrace_Script_VersionSpecific_Cached)+"\n"
-        outputString += "+ VaccineTrace_Vaccine_OR_Breed_Node: "+str(self.VaccineTrace_Vaccine_OR_Breed_Node)+"\n"
-        outputString += " \n"
-        outputString += " -+--------------------------------------------------------------------+-\n"
-        outputString += " \n"
-
-        return outputString
+    SCAN_Date = NULL
+    SCAN_Time = NULL
+    SCAN_Positivity = False
+    SCAN_Log = NULL
 
 
 
 
-class MAYAAntivirusAutoscan():
+class MAYAAntivirusCore():
 
-    open_scene_job = NULL
     scanResult = NULL
 
     Maya_AppName = NULL
@@ -60,107 +47,174 @@ class MAYAAntivirusAutoscan():
     Maya_CustomVersion = NULL
     Maya_Version = NULL
 
+    ANTIVIRUS_DATA_DIR = cmds.internalVar(userAppDir=True) + "00_MAYA_ANTIVIRUS"
+    ANTIVIRUS_DB_URL = "https://raw.githubusercontent.com/LouisGJBertrand/MAYA_Antivirus/main/db/malware_db.json"
+    ANTIVIRUS_DB_HASH_URL = "https://raw.githubusercontent.com/LouisGJBertrand/MAYA_Antivirus/main/db/malware_db.json.md5"
 
-    def __init__(self):
-        self.Execute_Antivirus()
-        self.open_scene_job = cmds.scriptJob(e=["SceneOpened", lambda: self.Execute_Antivirus()], protected=True)
-        self.open_scene_job = cmds.scriptJob(e=["SceneSaved", lambda: self.Execute_Antivirus()], protected=True)
+    DataBase = NULL
 
-    def haveWriteMethod(self):
+    CurrentReport = NULL
+
+    def CheckUpdate():
+        url = "https://api.github.com/repos/LouisGJBertrand/MAYA_Antivirus/tags"
+        tags = requests.get(url).json()
+
+        if PLUGIN_VERSION != tags[0]["name"]:
+            result = cmds.confirmDialog(
+                title='Maya Antivirus Update',
+                message='We\'ve detected that your malware version is not up to date anymore. please checkout the repository to update your antimalware',
+                button=['Ok'],
+                defaultButton='Ok',
+                cancelButton='Ok',
+                dismissString='Ok')
+            webbrowser.open('https://github.com/LouisGJBertrand/MAYA_Antivirus/releases/latest')
+            return False
+
         return True
-    def haveReadMethod(self):
-        return True
-    def InitVars(self):
-        self.Maya_AppName = cmds.about(version=True)
-        self.Maya_BatchMode = cmds.about(version=True)
-        self.Maya_CustomVersion = cmds.about(version=True)
-        self.Maya_Version = cmds.about(version=True)
 
 
-    # Code from github@RickHulzinga/MayaVaccineVirusRemovalTool  (https://github.com/RickHulzinga/MayaVaccineVirusRemovalTool)
-    # Adapted by Louis BERTRAND
-    # Cleans maya files from the vaccine.py virus
-    def VaccineAntigene(self, verbose = True):
+    def Initialize():
+        print("Initializing Environment Variables...")
+        MAYAAntivirusCore.InitVars()
+        print("Initializing Data Structures...")
+        MAYAAntivirusCore.InitializeDataStructure()
+        print("Reloading Database...")
+        MAYAAntivirusCore.ReloadDatabase()
 
-        if verbose:
-            print("Searching for Vaccine")
+    def InitVars():
+        MAYAAntivirusCore.Maya_AppName = cmds.about(version=True)
+        MAYAAntivirusCore.Maya_BatchMode = cmds.about(version=True)
+        MAYAAntivirusCore.Maya_CustomVersion = cmds.about(version=True)
+        MAYAAntivirusCore.Maya_Version = cmds.about(version=True)
 
-        l_malicious_code_found = False
+    def ValidateChecksum(filepath, md5):
+            # Open,close, read file and calculate MD5 on its contents 
+            with open(filepath, 'rb') as file_to_check:
+                # read contents of the file
+                data = file_to_check.read()    
+                # pipe contents of the file through
+                md5_returned = hashlib.md5(data).hexdigest()
 
-        scriptdir = cmds.internalVar(userAppDir=True) + 'scripts'
-        if verbose:
-            print ("scriptdir: "+scriptdir)
+            return md5 == md5_returned
 
-        ver_spec_scriptdir = cmds.internalVar(userAppDir=True) + self.Maya_Version + '/scripts'
-        if verbose:
-            print ("ver_spec_scriptdir: "+scriptdir)
+    def DownloadRemoteData(url: str, dest_folder: str):
+        if not os.path.exists(dest_folder):
+            os.makedirs(dest_folder)  # create folder if it does not exist
+
+        filename = url.split('/')[-1].replace(" ", "_")  # be careful with file names
+        file_path = os.path.join(dest_folder, filename)
+
+        r = requests.get(url, stream=True)
+        if r.ok:
+            print("saving to", os.path.abspath(file_path))
+            with open(file_path, 'wb') as f:
+                for chunk in r.iter_content(chunk_size=1024 * 8):
+                    if chunk:
+                        f.write(chunk)
+                        f.flush()
+                        os.fsync(f.fileno())
+        else:  # HTTP status code 4XX/5XX
+            print("Download failed: status code {}\n{}".format(r.status_code, r.text))
+
+    def InitializeDataStructure():
+        l_av_path = MAYAAntivirusCore.ANTIVIRUS_DATA_DIR
+
+        if not os.path.isdir(l_av_path):
+            os.mkdir(l_av_path)
+
+        if not os.path.isdir(l_av_path + "/QUARANTINE"):
+            os.mkdir(l_av_path + "/QUARANTINE")
+
+        if not os.path.isdir(l_av_path + "/reports"):
+            os.mkdir(l_av_path + "/reports")
+
+        if not os.path.isdir(l_av_path + "/db"):
+            os.mkdir(l_av_path + "/db")
+
+        if not os.path.isfile(l_av_path + "/db/malware_db.json"):
+            MAYAAntivirusCore.DownloadRemoteData(MAYAAntivirusCore.ANTIVIRUS_DB_URL, l_av_path + "/db/")
+
+        if not os.path.isfile(l_av_path + "/db/malware_db.json.md5"):
+            MAYAAntivirusCore.DownloadRemoteData(MAYAAntivirusCore.ANTIVIRUS_DB_HASH_URL, l_av_path + "/db/")
+
+    def ReloadDatabase():
+
+        l_av_path = MAYAAntivirusCore.ANTIVIRUS_DATA_DIR
+
+        database_path = l_av_path + "/db/malware_db.json"
+        database_hash_path = l_av_path + "/db/malware_db.json.md5"
+        database_hash_value = open(database_hash_path).read()
 
 
-        # VACCINE.PY
-        virloc = os.path.join(scriptdir, "vaccine.py")
-        ver_spec_virloc = os.path.join(ver_spec_scriptdir, "vaccine.py")
+        checksumValidityTimeoutCounter = 10
+        while not MAYAAntivirusCore.ValidateChecksum(database_path, database_hash_value):
 
-        if os.path.isfile(virloc):
-            cmds.warning("Found vaccine.py in scriptlocation, removing ...")
-            os.remove(virloc)
-            l_malicious_code_found = True
-            self.scanResult.VaccineTrace_Script = True
-        else:
-            if verbose:
-                print("vaccine.py not found in scriptlocation, OK")
-
-        if os.path.isfile(ver_spec_virloc):
-            cmds.warning("Found vaccine.py in version specific scriptlocation, removing ...")
-            os.remove(ver_spec_virloc)
-            l_malicious_code_found = True
-            self.scanResult.VaccineTrace_Script_VersionSpecific = True
-        else:
-            if verbose:
-                print("vaccine.py not found in version specific scriptlocation, OK")
+            if checksumValidityTimeoutCounter <= 0:
+                raise ValueError('Unable to validate the database')
+            
+            shutil.rmtree(l_av_path + "/db")
+            MAYAAntivirusCore.InitializeDataStructure()
+            checksumValidityTimeoutCounter -= 1
 
 
-        # VACCINE.PYC
-        virloc = os.path.join(scriptdir, "__pycache__/vaccine.pyc")
-        ver_spec_virloc = os.path.join(ver_spec_scriptdir, "__pycache__/vaccine.pyc")
+        f = open(database_path)
+        MAYAAntivirusCore.DataBase = json.loads(f.read())
 
-        if os.path.isfile(virloc):
-            cmds.warning("Found vaccine.pyc` in scriptlocation, removing ...")
-            os.remove(virloc)
-            l_malicious_code_found = True
-            self.scanResult.VaccineTrace_Script_Cached = True
-        else:
-            if verbose:
-                print("vaccine.pyc not found in scriptlocation, OK")
+    def FormatPathString(str):
+        str = str.replace("%mayaUserDocDir%", cmds.internalVar(userAppDir=True))
+        str = str.replace("%mayaVersionSpecificUserDocDir%", cmds.internalVar(userAppDir=True) + MAYAAntivirusCore.Maya_Version)
+        return str
 
-        if os.path.isfile(ver_spec_virloc):
-            cmds.warning("Found vaccine.py in version specific scriptlocation, removing ...")
-            os.remove(ver_spec_virloc)
-            l_malicious_code_found = True
-            self.scanResult.VaccineTrace_Script_VersionSpecific_Cached = True
-        else:
-            if verbose:
-                print("vaccine.pyc not found in version specific scriptlocation, OK")
+    def ScanFilesAction(unformatedPath, fileNames, ifPositive):
+        
+        positivity = False
 
-        bannedNodes = ["vaccine_gene", "breed_gene"]
+        for fileName in fileNames:
+            virloc = MAYAAntivirusCore.FormatPathString(unformatedPath) + "/" + fileName
+
+            if not os.path.isfile(virloc):
+                continue
+
+            if ifPositive == "Remove":
+                os.remove(virloc)
+                print ("      file %s has been removed" % fileName)
+                positivity = True
+                continue
+                
+            if ifPositive == "Quarantine":
+                shutil.copyfile(virloc, str.replace("%mayaUserDocDir%", cmds.internalVar(userAppDir=True) + "QUARANTINE/" + fileName + ".infected"))
+                print ("      file %s has been quarantined" % fileName)
+                positivity = True
+                continue
+
+            # Default : Quarantine
+            shutil.copyfile(virloc, str.replace("%mayaUserDocDir%", cmds.internalVar(userAppDir=True) + "QUARANTINE/" + fileName + ".infected"))
+            print ("      file %s has been quarantined" % fileName)
+            positivity = True
+            continue
+        return positivity
+
+    def ScanNodes(nodeNames):
+        bannedNodes = nodeNames
+
+        positive = False
 
         for i in cmds.ls(type="script"):
 
             if i in bannedNodes:
-                cmds.warning("Found malicious scriptnode '" + i + "', removing ...")
+                print(      "Found malicious scriptnode '%s', removing ..." % i)
                 cmds.delete(i)
-                self.scanResult.VaccineTrace_Vaccine_OR_Breed_Node = True
-                l_malicious_code_found = True
+                positive = True
 
-        if l_malicious_code_found:
-            cmds.warning("traces of vaccine & breed had been found in your file or in your maya files")
-            self.scanResult.VaccineTrace = True
+        return positive
 
-        return l_malicious_code_found
-
-    def Execute_Antivirus(self):
-
+    def ExecuteScan(verbose = True):
 
         # System Infos
+        print("")
+        print("------------------------------------------------------")
+        print("")
+        print("                MAYA ANTIVIRUS Scan")
         print("")
         print("System Infos")
         print(
@@ -171,23 +225,51 @@ class MAYAAntivirusAutoscan():
         print("")
         print("")
 
+        scanPositivity = False
+        CurrentReport = ScanReport()
 
-        self.InitVars()
+        # print (MAYAAntivirusCore.DataBase)
+        # raise MessageError("DEBUG -- Break")
 
-
-        self.scanResult = ScanResult()
-        self.malicious_code_found = False
-        l_malicious_code_found = self.malicious_code_found
-
-        print("Start Malware Scan...")
+        for Malware in MAYAAntivirusCore.DataBase["db"]:
 
 
-        # VACCINE VIRUS DETECTION & REPAIRE (scene based)
-        l_malicious_code_found = l_malicious_code_found or self.VaccineAntigene(True)
+            print ("")
+            print ("Searching for %s malware" % Malware["MalwareName"])
+            print ("Malware Name: %s" % Malware["MalwareName"])
+            print ("Malware ID: %s" % Malware["MalwareID"])
+            print ("Malware Declaration URL: %s" % Malware["MalwareDeclarationURL"])
+            print ("Malware Severity: %s" % Malware["MalwareSeverity"])
+            print ("Malware Test count: %s" % len(Malware["Tests"]))
 
+            for Test in Malware["Tests"]:
+                print ("")
+                TestName = Test["Name"]
+                TestType = Test["Type"]
 
-        cmds.warning("Scene Clear")
-        if l_malicious_code_found:
+                if TestType == "Files":
+                    print("   Test : %s" % TestName)
+                    print("   Test Type : %s" % TestType)
+                    if MAYAAntivirusCore.ScanFilesAction(Test["FolderPath"], Test["FilesName"], Test["IfPositive"]) :
+                        print("   result positive, positive action : %s " % Test["IfPositive"])
+                        continue
+                    print("   result Negative, OK")
+                    continue
+                if TestType == "Nodes":
+                    print("   Test : %s" % TestName)
+                    print("   Test Type : %s" % TestType)
+                    if MAYAAntivirusCore.ScanNodes(Test["NodeNames"]):
+                        print("   result positive, malicious nodes removed")
+                        continue
+                    print("   result Negative, OK")
+                    continue
+
+                print ("      Test %s is not valid, continuing" % TestName)
+
+        print ("")
+        print ("Scan Ended")
+
+        if scanPositivity:
             result = cmds.confirmDialog(
                 title='Malware Alert',
                 message='One or multiple malware had been detected in your maya configuration file. Please check the console to see the scan result.',
@@ -196,12 +278,31 @@ class MAYAAntivirusAutoscan():
                 cancelButton='Ok',
                 dismissString='Ok')
             cmds.warning("Malware Found")
-        else:
-            cmds.warning("No Malicious nodes found")
+        print ("")
+        print("------------------------------------------------------")
+        print("")
 
+class MAYAAntivirusAutoscan():
 
-        self.malicious_code_found = l_malicious_code_found
-        print(self.scanResult.Log())
+    open_scene_job = NULL
+    save_scene_job = NULL
+
+    def __init__(self):
+
+        if not MAYAAntivirusCore.CheckUpdate():
+            print('The malware plugin is not up to date anymore, it may cause issues')
+            print('please update at https://github.com/LouisGJBertrand/MAYA_Antivirus/releases')
+
+        MAYAAntivirusCore.Initialize()
+
+        MAYAAntivirusCore.ExecuteScan()
+        self.open_scene_job = cmds.scriptJob(e=["SceneOpened", lambda: MAYAAntivirusCore.ExecuteScan()], protected=True)
+        self.save_scene_job = cmds.scriptJob(e=["SceneSaved", lambda: MAYAAntivirusCore.ExecuteScan()], protected=True)
+
+    def haveWriteMethod(self):
+        return True
+    def haveReadMethod(self):
+        return True
 
 # creator
 def antivirus_init():
