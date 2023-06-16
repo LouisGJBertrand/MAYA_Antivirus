@@ -13,8 +13,23 @@ Reporting:
             - SCAN_Time - done
             - SCAN_Positivity - done
             - SCAN_Log - done
-
-
-
         - Export Function
         - Record Function
+
+core:
+		configFile:
+				- AV_SECUREMODE
+				- AV_AUTOUPDATE_DB
+				- AV_AUTOUPDATE_CORE (long term)
+		- separatedCoreScript (long term)
+
+installer:
+		- Windows
+		- Linux
+		- Macos
+
+tests:
+		platforms:
+				- Windows
+				- Linux
+				- Macos
