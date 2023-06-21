@@ -15,12 +15,16 @@ Reporting:
             - SCAN_Log - done
         - Export Function
         - Record Function
+	- Clear old reports Function
 
 core:
 		configFile:
-				- AV_SECUREMODE
-				- AV_AUTOUPDATE_DB
-				- AV_AUTOUPDATE_CORE (long term)
+			- AV_SECUREMODE
+			- AV_AUTOUPDATE_DB
+			- AV_AUTOUPDATE_CORE (long term)
+			- REPORT_REPORTSAVING (never/positive/allways)
+			- REPORT_AUTOCLEAR_REPORTS (never/periodycally)
+			- REPORT_REPORTCLEARING_PERIODTIME (345600 (4days))
 		- separatedCoreScript (long term)
 
 installer:
