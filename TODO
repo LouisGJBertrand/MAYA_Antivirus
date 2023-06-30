@@ -13,28 +13,29 @@ Reporting:
             - SCAN_Time - done
             - SCAN_Positivity - done
             - SCAN_Log - done
-        - Export Function
-        - Record Function
-	- Clear old reports Function
+        - Export Function - done
+        - Record Function - done
+        - Clear old reports Function
 
 core:
-	configFile:
-		- AV_SECUREMODE
-		- AV_AUTOUPDATE_DB
-		- AV_AUTOUPDATE_CORE (long term)
-		- AV_CONSOLEVERBOSE
-		- REPORT_REPORTSAVING (never/positive/allways)
-		- REPORT_AUTOCLEAR_REPORTS (never/periodycally)
-		- REPORT_REPORTCLEARING_PERIODTIME (345600 (4days))
-	- separatedCoreScript (long term)
+    configFile:
+        - AV_SECUREMODE
+        - AV_AUTOUPDATE_DB
+        - AV_AUTOUPDATE_CORE (long term)
+        - AV_CONSOLEVERBOSE
+        - REPORT_REPORTSAVING (never/positive/allways)
+        - REPORT_AUTOCLEAR_REPORTS (never/periodycally)
+        - REPORT_REPORTCLEARING_PERIODTIME (345600 (4days))
+    - separatedCoreScript (long term)
+    - Remote check of DB & reload : done
 
 installer:
-		- Windows
-		- Linux
-		- Macos
+    - Windows
+    - Linux
+    - Macos
 
 tests:
-		platforms:
-				- Windows
-				- Linux
-				- Macos
+    platforms:
+        - Windows
+        - Linux
+        - Macos

@@ -1,4 +1,5 @@
 
+from array import array
 from datetime import date
 from email.errors import MessageError
 import os
@@ -18,11 +19,17 @@ import maya.cmds as cmds
 import maya.OpenMayaMPx as OpenMayaMPx
 
 PLUGIN_NAME = "Maya Antivirus Autoscan"
-PLUGIN_COMPANY = "Louis BERTRAND"
-PLUGIN_VERSION = "v0.0.1"
+PLUGIN_COMPANY = "Studio Trente Trente-Six"
+PLUGIN_VERSION = "v0.1.0"
 PLUGIN_EXT_DEPEDENCIES = "github@RickHulzinga/MayaVaccineVirusRemovalTool"
 
-ANTIVIRUS_OBJECT = NULL
+class MAYAAV_MEM:
+    ANTIVIRUS_OBJECT = NULL
+
+class Debug:
+    def Break(str=NULL):
+        if not str == NULL : print (str)
+        raise MessageError("Debug.Break")
 
 class ScanReport():
 
@@ -33,6 +40,7 @@ class ScanReport():
     MAYA_Version = NULL
 
     ANTIVIRUS_DATA_DIR = cmds.internalVar(userAppDir=True) + "00_MAYA_ANTIVIRUS"
+    ANTIVIRUS_VERSION = cmds.internalVar(userAppDir=True) + "00_MAYA_ANTIVIRUS"
 
     SCAN_Date = NULL
     SCAN_Time = NULL
@@ -51,12 +59,16 @@ class ScanReport():
     def ExportToFile(self, filePath: str):
         f = open(filePath, 'w')
         f.write("Exported Scan\n")
+        f.write("\n")
         f.write("MAYA_FileName: %s\n" % self.MAYA_FileName)
         f.write("MAYA_AppName: %s\n" % self.MAYA_AppName)
         f.write("MAYA_BatchMod: %s\n" % self.MAYA_BatchMod)
         f.write("MAYA_CustomVersion: %s\n" % self.MAYA_CustomVersion)
         f.write("MAYA_Version: %s\n" % self.MAYA_Version)
+        f.write("\n")
         f.write("ANTIVIRUS_DATA_DIR: %s\n" % self.ANTIVIRUS_DATA_DIR)
+        f.write("ANTIVIRUS_VERSION: %s\n" % self.ANTIVIRUS_VERSION)
+        f.write("\n")
         f.write("SCAN_Date: %s\n" % self.SCAN_Date)
         f.write("SCAN_Time: %s\n" % self.SCAN_Time)
         f.write("SCAN_Positivity: %s\n" % self.SCAN_Positivity)
@@ -83,11 +95,40 @@ class MAYAAntivirusCore():
 
     CurrentReport = NULL
 
+    LAST_REPORT_TIMER=0
+    SESSION_SCAN_COUNT=0
+    UPDATE_CLOCK=0
+    CLK_DELTA=0
+
+    def AnalyseUpdateTag(tag: str):
+        l_ver = tag.split("-")[0].split(".")
+
+        ## l_nightly_build_id = float(tag.split("-")[1]/(10 ** len(tag.split("-")[1])))
+        l_i = 0
+        for l_ver_el in l_ver:
+            l_ver[l_i] = float(l_ver_el.replace("v","0"))
+            l_i += 1
+
+        return l_ver
+    
+    def CalculateVersionTag(tag: array):
+        l_ver_calc = 0
+        tag = tag[::-1]
+        for l_i in range(0, len(tag)):
+            l_ver_calc += tag[l_i] * (10 ** (l_i * 3))
+
+        return l_ver_calc
+
     def CheckUpdate():
         url = "https://api.github.com/repos/LouisGJBertrand/MAYA_Antivirus/tags"
         tags = requests.get(url).json()
 
-        if PLUGIN_VERSION != tags[0]["name"]:
+        l_remote_tag_ver = MAYAAntivirusCore.CalculateVersionTag(MAYAAntivirusCore.AnalyseUpdateTag(tags[0]["name"]))
+        l_local_tag_ver = MAYAAntivirusCore.CalculateVersionTag(MAYAAntivirusCore.AnalyseUpdateTag(PLUGIN_VERSION))
+
+        # Debug.Break("VersionTest:\n"+str(l_remote_tag_ver)+"\n"+str(l_local_tag_ver)) #
+
+        if l_local_tag_ver < l_remote_tag_ver:
             result = cmds.confirmDialog(
                 title='Maya Antivirus Update',
                 message='We\'ve detected that your antimalware version is not up to date anymore. please checkout the repository to update your antimalware',
@@ -107,6 +148,8 @@ class MAYAAntivirusCore():
         MAYAAntivirusCore.InitializeDataStructure()
         print("Reloading Database...")
         MAYAAntivirusCore.ReloadDatabase()
+        print("Initializing Internal UPDATE_CLOCK...")
+        MAYAAntivirusCore.UPDATE_CLOCK = time.time()
 
     def InitVars():
         MAYAAntivirusCore.MAYA_AppName = cmds.about(version=True)
@@ -307,7 +350,24 @@ class MAYAAntivirusCore():
 
         return positive
 
+    def AV_Clock_Update():
+        MAYAAntivirusCore.CLK_DELTA = l_delta_time = time.time() - MAYAAntivirusCore.UPDATE_CLOCK
+        MAYAAntivirusCore.LAST_REPORT_TIMER += l_delta_time
+        MAYAAntivirusCore.UPDATE_CLOCK = time.time()
+
     def ExecuteScan(l_verbose = True, saveReport = True):
+
+        MAYAAntivirusCore.AV_Clock_Update()
+
+        # print ("\n")
+        # print ("LAST_REPORT_TIMER:%s"%MAYAAntivirusCore.LAST_REPORT_TIMER)
+        # print ("SESSION_SCAN_COUNT:%s"%MAYAAntivirusCore.SESSION_SCAN_COUNT)
+        # print ("UPDATE_CLOCK:%s"%MAYAAntivirusCore.UPDATE_CLOCK)
+        # print ("CLK_DELTA:%s"%MAYAAntivirusCore.CLK_DELTA)
+        # print ("\n")
+
+        if MAYAAntivirusCore.LAST_REPORT_TIMER < 5 & MAYAAntivirusCore.SESSION_SCAN_COUNT != 0:
+            return
 
         l_ScanReport = ScanReport()
 
@@ -323,6 +383,8 @@ class MAYAAntivirusCore():
         l_ScanReport.MAYA_BatchMod = MAYAAntivirusCore.MAYA_BatchMode
         l_ScanReport.MAYA_CustomVersion = MAYAAntivirusCore.MAYA_CustomVersion
         l_ScanReport.MAYA_Version = MAYAAntivirusCore.MAYA_Version
+
+        l_ScanReport.ANTIVIRUS_VERSION = PLUGIN_VERSION
 
         # System Infos
         l_ScanReport.RecordLine("", l_verbose)
@@ -406,9 +468,13 @@ class MAYAAntivirusCore():
 
         l_ScanReport.SCAN_Positivity = l_scanPositivity
 
-        if l_scanPositivity:
+        if l_scanPositivity & saveReport:
             ReportSavePath =  MAYAAntivirusCore.ANTIVIRUS_DATA_DIR + "/reports/" + l_ScanReport.GenerateFileName()
             l_ScanReport.ExportToFile(ReportSavePath)
+            print("\nREPORT SAVED AT : %s\n" % ReportSavePath)
+
+        MAYAAntivirusCore.LAST_REPORT_TIMER = 0
+        MAYAAntivirusCore.SESSION_SCAN_COUNT += 1
 
 
 class MAYAAntivirusAutoscan():
@@ -427,6 +493,11 @@ class MAYAAntivirusAutoscan():
         MAYAAntivirusCore.ExecuteScan()
         self.open_scene_job = cmds.scriptJob(e=["SceneOpened", lambda: MAYAAntivirusCore.ExecuteScan()], protected=True)
         self.save_scene_job = cmds.scriptJob(e=["SceneSaved", lambda: MAYAAntivirusCore.ExecuteScan()], protected=True)
+        #self.open_scene_job = cmds.scriptJob(e=["SceneOpened", lambda: MAYAAntivirusCore.ExecuteScan()], protected=True)
+
+    def uninit(self):
+        cmds.scriptJob( kill=self.open_scene_job, force=True)
+        cmds.scriptJob( kill=self.save_scene_job, force=True)
 
     def haveWriteMethod(self):
         return True
@@ -440,8 +511,7 @@ def antivirus_init():
 # initializer
 def nodeInitializer():
     # nothing to do
-    cmds.warning("Initializing plugin")
-    
+    cmds.warning("Initializing %s plugin" % PLUGIN_NAME)
 
 # initialize the script plug-in
 def initializePlugin(mobject):
@@ -452,7 +522,7 @@ def initializePlugin(mobject):
         print("%s" % PLUGIN_NAME)
         print("%s" % PLUGIN_VERSION)
         print("developed by %s" % PLUGIN_COMPANY)
-        ANTIVIRUS_OBJECT = MAYAAntivirusAutoscan()
+        MAYAAV_MEM.ANTIVIRUS_OBJECT = MAYAAntivirusAutoscan()
         print("Initialized Antivirus correctly")
         print("  ")
         print("  ")
@@ -464,7 +534,8 @@ def initializePlugin(mobject):
 def uninitializePlugin(mobject):
     mplugin = OpenMayaMPx.MFnPlugin(mobject)
     try:
-        ANTIVIRUS_OBJECT = NULL
+        MAYAAV_MEM.ANTIVIRUS_OBJECT.uninit()
+        MAYAAV_MEM.ANTIVIRUS_OBJECT = NULL
         print("  ")
         print("  ")
         print("Uninitialized Antivirus correctly")
