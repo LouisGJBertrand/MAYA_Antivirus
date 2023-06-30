@@ -23,3 +23,8 @@ to install the libraries, go to `C:\Program Files\Autodesk\Maya<version>\bin` an
 RickHulzinga / MayaVaccineVirusRemovalTool:
   - a script that is executed on scene loading. initially in userSetup.py but for safety reasons maya does not execute it.
   - https://github.com/RickHulzinga/MayaVaccineVirusRemovalTool
+
+# Malware Reporting
+
+You can report new malware and treatment if found in the issue reporting system for this repository (https://github.com/LouisGJBertrand/MAYA_Antivirus/issues)
+The issue reports can serve also as an Autodesk Maya Malware database with every information on the threat
