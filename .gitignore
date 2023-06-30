@@ -1,3 +1,3 @@
 dev_compile.bat
 .vscode/*
-db/db_tool.php
+db/db_tool.py

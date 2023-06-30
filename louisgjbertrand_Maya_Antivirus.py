@@ -1,8 +1,12 @@
 
+from datetime import date
 from email.errors import MessageError
 import os
+from pickle import TRUE
 import shutil
 import sys
+from time import sleep
+import time
 import webbrowser
 import requests
 import hashlib
@@ -33,19 +37,43 @@ class ScanReport():
     SCAN_Date = NULL
     SCAN_Time = NULL
     SCAN_Positivity = False
-    SCAN_Log = NULL
+    SCAN_Log = ""
 
+    def RecordString(self, string: str, verbose: bool):
+        ScanReport.SCAN_Log += string
+        if verbose:
+            print(string, end='')
+    def RecordLine(self, string: str, verbose: bool):
+        ScanReport.SCAN_Log += string + "\n"
+        if verbose:
+            print(string)
 
+    def ExportToFile(self, filePath: str):
+        f = open(filePath, 'w')
+        f.write("Exported Scan\n")
+        f.write("MAYA_FileName: %s\n" % self.MAYA_FileName)
+        f.write("MAYA_AppName: %s\n" % self.MAYA_AppName)
+        f.write("MAYA_BatchMod: %s\n" % self.MAYA_BatchMod)
+        f.write("MAYA_CustomVersion: %s\n" % self.MAYA_CustomVersion)
+        f.write("MAYA_Version: %s\n" % self.MAYA_Version)
+        f.write("ANTIVIRUS_DATA_DIR: %s\n" % self.ANTIVIRUS_DATA_DIR)
+        f.write("SCAN_Date: %s\n" % self.SCAN_Date)
+        f.write("SCAN_Time: %s\n" % self.SCAN_Time)
+        f.write("SCAN_Positivity: %s\n" % self.SCAN_Positivity)
+        f.write("SCAN_Log: '''\n%s\n\n'''\n\n" % self.SCAN_Log)
+        f.flush()
 
+    def GenerateFileName(self):
+        return "scanReport."+self.MAYA_FileName+"."+str(self.SCAN_Date)+str(self.SCAN_Time)+".log"
 
 class MAYAAntivirusCore():
 
     scanResult = NULL
 
-    Maya_AppName = NULL
-    Maya_BatchMode = NULL
-    Maya_CustomVersion = NULL
-    Maya_Version = NULL
+    MAYA_AppName = NULL
+    MAYA_BatchMode = NULL
+    MAYA_CustomVersion = NULL
+    MAYA_Version = NULL
 
     ANTIVIRUS_DATA_DIR = cmds.internalVar(userAppDir=True) + "00_MAYA_ANTIVIRUS"
     ANTIVIRUS_DB_URL = "https://raw.githubusercontent.com/LouisGJBertrand/MAYA_Antivirus/main/db/malware_db.json"
@@ -62,7 +90,7 @@ class MAYAAntivirusCore():
         if PLUGIN_VERSION != tags[0]["name"]:
             result = cmds.confirmDialog(
                 title='Maya Antivirus Update',
-                message='We\'ve detected that your malware version is not up to date anymore. please checkout the repository to update your antimalware',
+                message='We\'ve detected that your antimalware version is not up to date anymore. please checkout the repository to update your antimalware',
                 button=['Ok'],
                 defaultButton='Ok',
                 cancelButton='Ok',
@@ -71,7 +99,6 @@ class MAYAAntivirusCore():
             return False
 
         return True
-
 
     def Initialize():
         print("Initializing Environment Variables...")
@@ -82,18 +109,28 @@ class MAYAAntivirusCore():
         MAYAAntivirusCore.ReloadDatabase()
 
     def InitVars():
-        MAYAAntivirusCore.Maya_AppName = cmds.about(version=True)
-        MAYAAntivirusCore.Maya_BatchMode = cmds.about(version=True)
-        MAYAAntivirusCore.Maya_CustomVersion = cmds.about(version=True)
-        MAYAAntivirusCore.Maya_Version = cmds.about(version=True)
+        MAYAAntivirusCore.MAYA_AppName = cmds.about(version=True)
+        MAYAAntivirusCore.MAYA_BatchMode = cmds.about(version=True)
+        MAYAAntivirusCore.MAYA_CustomVersion = cmds.about(version=True)
+        MAYAAntivirusCore.MAYA_Version = cmds.about(version=True)
+
+    def CalculateMD5(filepath):
+        f = open(filepath,'rb')
+        m = hashlib.md5()
+        while True:
+            ## Don't read the entire file at once...
+            data = f.read(10240)
+            if len(data) == 0:
+                break
+            m.update(data)
+        return m.hexdigest()
 
     def ValidateChecksum(filepath, md5):
-            # Open,close, read file and calculate MD5 on its contents 
-            with open(filepath, 'rb') as file_to_check:
-                # read contents of the file
-                data = file_to_check.read()    
-                # pipe contents of the file through
-                md5_returned = hashlib.md5(data).hexdigest()
+
+            md5_returned = MAYAAntivirusCore.CalculateMD5(filepath)
+
+            # print("local db hash: %s" % md5_returned)
+            # print("local db hash verification: %s" % md5)
 
             return md5 == md5_returned
 
@@ -105,16 +142,20 @@ class MAYAAntivirusCore():
         file_path = os.path.join(dest_folder, filename)
 
         r = requests.get(url, stream=True)
-        if r.ok:
-            print("saving to", os.path.abspath(file_path))
-            with open(file_path, 'wb') as f:
-                for chunk in r.iter_content(chunk_size=1024 * 8):
-                    if chunk:
-                        f.write(chunk)
-                        f.flush()
-                        os.fsync(f.fileno())
-        else:  # HTTP status code 4XX/5XX
+        if not r.ok:
             print("Download failed: status code {}\n{}".format(r.status_code, r.text))
+        print("saving to", os.path.abspath(file_path))
+        f = open(file_path, 'wb')
+        for chunk in r.iter_content(chunk_size=1024 * 8):
+            if not chunk:
+                break
+            f.write(chunk)
+            f.flush()
+            os.fsync(f.fileno())
+
+    def CompareHashToRemote(hash: str, remote_url: str):
+        r = requests.get(remote_url, stream=True)
+        return hash == r.text
 
     def InitializeDataStructure():
         l_av_path = MAYAAntivirusCore.ANTIVIRUS_DATA_DIR
@@ -143,17 +184,30 @@ class MAYAAntivirusCore():
 
         database_path = l_av_path + "/db/malware_db.json"
         database_hash_path = l_av_path + "/db/malware_db.json.md5"
+
         database_hash_value = open(database_hash_path).read()
 
 
+        if not MAYAAntivirusCore.CompareHashToRemote(
+            database_hash_value,
+            MAYAAntivirusCore.ANTIVIRUS_DB_HASH_URL):
+            print("")
+            print("Local Hash does not match remote Hash")
+            print("Removing Previous DB...")
+            print("")
+            shutil.rmtree(l_av_path + "/db")
+            # raise MessageError("BREAK...")
+            MAYAAntivirusCore.InitializeDataStructure()
+            database_hash_value = open(database_hash_path).read()
+
         checksumValidityTimeoutCounter = 10
         while not MAYAAntivirusCore.ValidateChecksum(database_path, database_hash_value):
-
             if checksumValidityTimeoutCounter <= 0:
                 raise ValueError('Unable to validate the database')
             
             shutil.rmtree(l_av_path + "/db")
             MAYAAntivirusCore.InitializeDataStructure()
+            database_hash_value = open(database_hash_path).read()
             checksumValidityTimeoutCounter -= 1
 
 
@@ -162,10 +216,12 @@ class MAYAAntivirusCore():
 
     def FormatPathString(str):
         str = str.replace("%mayaUserDocDir%", cmds.internalVar(userAppDir=True))
-        str = str.replace("%mayaVersionSpecificUserDocDir%", cmds.internalVar(userAppDir=True) + MAYAAntivirusCore.Maya_Version)
+        str = str.replace("%mayaVersionSpecificUserDocDir%", cmds.internalVar(userAppDir=True) + MAYAAntivirusCore.MAYA_Version)
         return str
 
-    def ScanFilesAction(unformatedPath, fileNames, ifPositive):
+    # INDEV
+    # TODO: Tests, Validate
+    def ScanFilesAction(unformatedPath, fileNames, ifPositive, report: ScanReport, verbose: bool):
         
         positivity = False
 
@@ -177,24 +233,67 @@ class MAYAAntivirusCore():
 
             if ifPositive == "Remove":
                 os.remove(virloc)
-                print ("      file %s has been removed" % fileName)
+                report.RecordLine("      file %s has been removed" % fileName, verbose)
                 positivity = True
                 continue
                 
             if ifPositive == "Quarantine":
                 shutil.copyfile(virloc, str.replace("%mayaUserDocDir%", cmds.internalVar(userAppDir=True) + "QUARANTINE/" + fileName + ".infected"))
-                print ("      file %s has been quarantined" % fileName)
+                report.RecordLine("      file %s has been quarantined" % fileName, verbose)
                 positivity = True
                 continue
 
             # Default : Quarantine
             shutil.copyfile(virloc, str.replace("%mayaUserDocDir%", cmds.internalVar(userAppDir=True) + "QUARANTINE/" + fileName + ".infected"))
-            print ("      file %s has been quarantined" % fileName)
+            report.RecordLine("      file %s has been quarantined" % fileName, verbose)
             positivity = True
             continue
         return positivity
 
-    def ScanNodes(nodeNames):
+    # INDEV
+    # TODO: JSONParsing, Tests, Validate
+    def ScanFilesMD5HashAction(unformatedPath, hashValues, ifPositive, report: ScanReport, verbose: bool):
+        
+        positivity = False
+
+
+        virloc = MAYAAntivirusCore.FormatPathString(unformatedPath) + "/"
+
+        l_fileTree = os.walk(virloc)
+
+        for childname in l_fileTree:
+
+            if os.path.isdir(virloc + childname):
+                positivity = MAYAAntivirusCore.ScanFilesHashAction(virloc + childname, hashValues, ifPositive)
+                continue
+
+            for hash in hashValues:
+
+                if not MAYAAntivirusCore.ValidateChecksum(childname, hash):
+                    continue
+
+                if ifPositive == "Remove":
+                    os.remove(virloc)
+                    report.RecordLine("      file %s has been removed" % childname, verbose)
+                    positivity = True
+                    continue
+
+                if ifPositive == "Quarantine":
+                    shutil.copyfile(virloc, str.replace("%mayaUserDocDir%", cmds.internalVar(userAppDir=True) + "QUARANTINE/" + childname + ".infected"))
+                    report.RecordLine("      file %s has been quarantined" % childname, verbose)
+                    positivity = True
+                    continue
+
+                # Default : Quarantine
+                shutil.copyfile(virloc, str.replace("%mayaUserDocDir%", cmds.internalVar(userAppDir=True) + "QUARANTINE/" + childname + ".infected"))
+                report.RecordLine("      file %s has been quarantined" % childname, verbose)
+                positivity = True
+                continue
+        return positivity
+
+    # INDEV
+    # TODO: Tests, Validate
+    def ScanNodes(nodeNames, report: ScanReport, verbose: bool):
         bannedNodes = nodeNames
 
         positive = False
@@ -202,74 +301,96 @@ class MAYAAntivirusCore():
         for i in cmds.ls(type="script"):
 
             if i in bannedNodes:
-                print(      "Found malicious scriptnode '%s', removing ..." % i)
+                report.RecordLine(      "Found malicious scriptnode '%s', removing ..." % i, verbose)
                 cmds.delete(i)
                 positive = True
 
         return positive
 
-    def ExecuteScan(verbose = True):
+    def ExecuteScan(l_verbose = True, saveReport = True):
+
+        l_ScanReport = ScanReport()
+
+        l_ScanReport.MAYA_FileName = os.path.basename(cmds.file(q=True, sn=True)).split('/')[-1].replace(".","_")
+
+        if l_ScanReport.MAYA_FileName == "":
+            l_ScanReport.MAYA_FileName = "untitled_ma"
+
+        l_ScanReport.SCAN_Date = str(date.today())
+        l_ScanReport.SCAN_Time = str(time.time())
+
+        l_ScanReport.MAYA_AppName = MAYAAntivirusCore.MAYA_AppName
+        l_ScanReport.MAYA_BatchMod = MAYAAntivirusCore.MAYA_BatchMode
+        l_ScanReport.MAYA_CustomVersion = MAYAAntivirusCore.MAYA_CustomVersion
+        l_ScanReport.MAYA_Version = MAYAAntivirusCore.MAYA_Version
 
         # System Infos
-        print("")
-        print("------------------------------------------------------")
-        print("")
-        print("                MAYA ANTIVIRUS Scan")
-        print("")
-        print("System Infos")
-        print(
+        l_ScanReport.RecordLine("", l_verbose)
+        l_ScanReport.RecordLine("------------------------------------------------------", l_verbose)
+        l_ScanReport.RecordLine("", l_verbose)
+        l_ScanReport.RecordLine("                MAYA ANTIVIRUS Scan", l_verbose)
+        l_ScanReport.RecordLine("", l_verbose)
+        l_ScanReport.RecordLine("System Infos", l_verbose)
+        l_ScanReport.RecordLine(
             "AppName:" + str(cmds.about(application= True)) +
             ", BatchMode:" + str(cmds.about(batch=True)) +
             ", CustomVersion:" + str(cmds.about(customVersion=True)) +
-            ", Version:" + str(cmds.about(version=True)))
-        print("")
-        print("")
+            ", Version:" + str(cmds.about(version=True)), l_verbose)
+        l_ScanReport.RecordLine("", l_verbose)
+        l_ScanReport.RecordLine("", l_verbose)
 
-        scanPositivity = False
-        CurrentReport = ScanReport()
+        l_scanPositivity = False
 
         # print (MAYAAntivirusCore.DataBase)
         # raise MessageError("DEBUG -- Break")
 
-        for Malware in MAYAAntivirusCore.DataBase["db"]:
+        for l_Malware in MAYAAntivirusCore.DataBase["db"]:
 
+            l_ScanReport.RecordLine("", l_verbose)
+            l_ScanReport.RecordLine("Searching for %s malware" % l_Malware["MalwareName"], l_verbose)
+            l_ScanReport.RecordLine("Malware Name: %s" % l_Malware["MalwareName"], l_verbose)
+            l_ScanReport.RecordLine("Malware ID: %s" % l_Malware["MalwareID"], l_verbose)
+            l_ScanReport.RecordLine("Malware Declaration URL: %s" % l_Malware["MalwareDeclarationURL"], l_verbose)
+            l_ScanReport.RecordLine("Malware Severity: %s" % l_Malware["MalwareSeverity"], l_verbose)
+            l_ScanReport.RecordLine("Malware Test count: %s" % len(l_Malware["Tests"]), l_verbose)
 
-            print ("")
-            print ("Searching for %s malware" % Malware["MalwareName"])
-            print ("Malware Name: %s" % Malware["MalwareName"])
-            print ("Malware ID: %s" % Malware["MalwareID"])
-            print ("Malware Declaration URL: %s" % Malware["MalwareDeclarationURL"])
-            print ("Malware Severity: %s" % Malware["MalwareSeverity"])
-            print ("Malware Test count: %s" % len(Malware["Tests"]))
+            for l_Test in l_Malware["Tests"]:
 
-            for Test in Malware["Tests"]:
-                print ("")
-                TestName = Test["Name"]
-                TestType = Test["Type"]
+                l_ScanReport.RecordLine("", l_verbose)
+                TestName = l_Test["Name"]
+                l_TestType = l_Test["Type"]
 
-                if TestType == "Files":
-                    print("   Test : %s" % TestName)
-                    print("   Test Type : %s" % TestType)
-                    if MAYAAntivirusCore.ScanFilesAction(Test["FolderPath"], Test["FilesName"], Test["IfPositive"]) :
-                        print("   result positive, positive action : %s " % Test["IfPositive"])
+                if l_TestType == "Files":
+                    l_ScanReport.RecordLine("   Test : %s" % TestName, l_verbose)
+                    l_ScanReport.RecordLine("   Test Type : %s" % l_TestType, l_verbose)
+                    if MAYAAntivirusCore.ScanFilesAction(l_Test["FolderPath"], l_Test["FilesName"], l_Test["IfPositive"], l_ScanReport, l_verbose) :
+                        l_scanPositivity = True
+                        l_ScanReport.RecordLine("   result positive, positive action : %s " % l_Test["IfPositive"], l_verbose)
                         continue
-                    print("   result Negative, OK")
-                    continue
-                if TestType == "Nodes":
-                    print("   Test : %s" % TestName)
-                    print("   Test Type : %s" % TestType)
-                    if MAYAAntivirusCore.ScanNodes(Test["NodeNames"]):
-                        print("   result positive, malicious nodes removed")
-                        continue
-                    print("   result Negative, OK")
+                    l_ScanReport.RecordLine("   result Negative, OK", l_verbose)
                     continue
 
-                print ("      Test %s is not valid, continuing" % TestName)
+                if l_TestType == "Nodes":
+                    l_ScanReport.RecordLine("   Test : %s" % TestName, l_verbose)
+                    l_ScanReport.RecordLine("   Test Type : %s" % l_TestType, l_verbose)
+                    if MAYAAntivirusCore.ScanNodes(l_Test["NodeNames"], l_ScanReport, l_verbose):
+                        l_scanPositivity = True
+                        l_ScanReport.RecordLine("   result positive, malicious nodes removed", l_verbose)
+                        continue
+                    l_ScanReport.RecordLine("   result Negative, OK", l_verbose)
+                    continue
 
-        print ("")
-        print ("Scan Ended")
+                # TODO: Implement MD5FileHash
+                if l_TestType == "MD5FileHash":
+                    print("NOT IMPLEMENTED YET, IGNORING")
+                    continue
 
-        if scanPositivity:
+                l_ScanReport.RecordLine("      Test %s is not valid, continuing" % TestName, l_verbose)
+
+        l_ScanReport.RecordLine("", l_verbose)
+        l_ScanReport.RecordLine("Scan Ended", l_verbose)
+
+        if l_scanPositivity:
             result = cmds.confirmDialog(
                 title='Malware Alert',
                 message='One or multiple malware had been detected in your maya configuration file. Please check the console to see the scan result.',
@@ -277,10 +398,18 @@ class MAYAAntivirusCore():
                 defaultButton='Ok',
                 cancelButton='Ok',
                 dismissString='Ok')
-            cmds.warning("Malware Found")
-        print ("")
-        print("------------------------------------------------------")
-        print("")
+            l_ScanReport.RecordLine("Malware Found", l_verbose)
+
+        l_ScanReport.RecordLine("", l_verbose)
+        l_ScanReport.RecordLine("------------------------------------------------------", l_verbose)
+        l_ScanReport.RecordLine("", l_verbose)
+
+        l_ScanReport.SCAN_Positivity = l_scanPositivity
+
+        if l_scanPositivity:
+            ReportSavePath =  MAYAAntivirusCore.ANTIVIRUS_DATA_DIR + "/reports/" + l_ScanReport.GenerateFileName()
+            l_ScanReport.ExportToFile(ReportSavePath)
+
 
 class MAYAAntivirusAutoscan():
 
