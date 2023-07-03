@@ -1,6 +1,6 @@
-# MAYA_Antivirus
+# MAYA Antivirus
 
-An open source plugin that i made for myself that will compile multiple malicious script removers for maya into one plugin that can be activated in the plugin manager
+An open source Anti-malware plugin that aims to reduce and treat threats for the software Autodesk Maya. This project is not affiliated with Autodesk.
 
 
 # INSTALL

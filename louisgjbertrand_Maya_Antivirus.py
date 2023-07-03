@@ -21,7 +21,7 @@ import maya.OpenMayaMPx as OpenMayaMPx
 PLUGIN_NAME = "Maya Antivirus Autoscan"
 PLUGIN_COMPANY = "Studio Trente Trente-Six"
 PLUGIN_VERSION = "v0.1.1"
-PLUGIN_EXT_DEPEDENCIES = "github@RickHulzinga/MayaVaccineVirusRemovalTool"
+PLUGIN_EXT_DEPEDENCIES = ""
 
 class MAYAAV_MEM:
     ANTIVIRUS_OBJECT = NULL
