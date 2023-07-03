@@ -20,7 +20,7 @@ import maya.OpenMayaMPx as OpenMayaMPx
 
 PLUGIN_NAME = "Maya Antivirus Autoscan"
 PLUGIN_COMPANY = "Studio Trente Trente-Six"
-PLUGIN_VERSION = "v0.1.0"
+PLUGIN_VERSION = "v0.1.1"
 PLUGIN_EXT_DEPEDENCIES = "github@RickHulzinga/MayaVaccineVirusRemovalTool"
 
 class MAYAAV_MEM:
@@ -100,6 +100,8 @@ class MAYAAntivirusCore():
     UPDATE_CLOCK=0
     CLK_DELTA=0
 
+    ONLINE_CONNECTED = True
+
     def AnalyseUpdateTag(tag: str):
         l_ver = tag.split("-")[0].split(".")
 
@@ -121,7 +123,15 @@ class MAYAAntivirusCore():
 
     def CheckUpdate():
         url = "https://api.github.com/repos/LouisGJBertrand/MAYA_Antivirus/tags"
-        tags = requests.get(url).json()
+
+        try:
+            tags = requests.get(url).json()
+
+        except:
+            MAYAAntivirusCore.ONLINE_CONNECTED = False
+            print("Remote servers are unreachable, will proceed offline...")
+
+            return True
 
         l_remote_tag_ver = MAYAAntivirusCore.CalculateVersionTag(MAYAAntivirusCore.AnalyseUpdateTag(tags[0]["name"]))
         l_local_tag_ver = MAYAAntivirusCore.CalculateVersionTag(MAYAAntivirusCore.AnalyseUpdateTag(PLUGIN_VERSION))
@@ -197,6 +207,7 @@ class MAYAAntivirusCore():
             os.fsync(f.fileno())
 
     def CompareHashToRemote(hash: str, remote_url: str):
+
         r = requests.get(remote_url, stream=True)
         return hash == r.text
 
@@ -230,6 +241,14 @@ class MAYAAntivirusCore():
 
         database_hash_value = open(database_hash_path).read()
 
+        if not MAYAAntivirusCore.ONLINE_CONNECTED:
+            if not MAYAAntivirusCore.ValidateChecksum(database_path, database_hash_value):
+                cmds.confirmDialog( title='Invalid Malware Database', message='Remote servers can\'t be accessed and local DB cannot be validated.\nMaya Antivirus will be desactivated for the current session.', button=['OK'], defaultButton='OK', cancelButton='OK', dismissString='OK' )
+                return
+            print("Local database has been validated without remote checking due to lack of internet connectivity.")
+            f = open(database_path)
+            MAYAAntivirusCore.DataBase = json.loads(f.read())
+            return
 
         if not MAYAAntivirusCore.CompareHashToRemote(
             database_hash_value,
@@ -239,7 +258,7 @@ class MAYAAntivirusCore():
             print("Removing Previous DB...")
             print("")
             shutil.rmtree(l_av_path + "/db")
-            # raise MessageError("BREAK...")
+
             MAYAAntivirusCore.InitializeDataStructure()
             database_hash_value = open(database_hash_path).read()
 
@@ -260,10 +279,9 @@ class MAYAAntivirusCore():
     def FormatPathString(str):
         str = str.replace("%mayaUserDocDir%", cmds.internalVar(userAppDir=True))
         str = str.replace("%mayaVersionSpecificUserDocDir%", cmds.internalVar(userAppDir=True) + MAYAAntivirusCore.MAYA_Version)
+        str = str.replace("%mayaVersion%", MAYAAntivirusCore.MAYA_Version)
         return str
 
-    # INDEV
-    # TODO: Tests, Validate
     def ScanFilesAction(unformatedPath, fileNames, ifPositive, report: ScanReport, verbose: bool):
         
         positivity = False
@@ -334,8 +352,6 @@ class MAYAAntivirusCore():
                 continue
         return positivity
 
-    # INDEV
-    # TODO: Tests, Validate
     def ScanNodes(nodeNames, report: ScanReport, verbose: bool):
         bannedNodes = nodeNames
 
