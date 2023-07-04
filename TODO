@@ -30,7 +30,7 @@ core:
     - Remote check of DB & reload : done
 
 installer:
-    - Windows
+    - Windows - done
     - Linux
     - Macos
 

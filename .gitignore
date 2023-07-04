@@ -1,3 +1,8 @@
 dev_compile.bat
 .vscode/*
 db/db_tool.py
+
+
+Installers/*/build
+Installers/*/dist
+Installers/*/*.spec

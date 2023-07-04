@@ -72,7 +72,7 @@ class ScanReport():
         f.write("SCAN_Date: %s\n" % self.SCAN_Date)
         f.write("SCAN_Time: %s\n" % self.SCAN_Time)
         f.write("SCAN_Positivity: %s\n" % self.SCAN_Positivity)
-        f.write("SCAN_Log: '''\n%s\n\n'''\n\n" % self.SCAN_Log)
+        f.write("SCAN_Log: \'\'\'\n%s\n\n\'\'\'\n\n" % self.SCAN_Log)
         f.flush()
 
     def GenerateFileName(self):
