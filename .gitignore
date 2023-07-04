@@ -1,6 +1,6 @@
 dev_compile.bat
 .vscode/*
-db/db_tool.py
+# db/db_tool.py
 
 
 Installers/*/build
