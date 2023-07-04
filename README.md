@@ -15,7 +15,7 @@ This plugin requires the following pip libraries:
 to install the libraries, go to `C:\Program Files\Autodesk\Maya<version>\bin` and execute the following commands:
 
 ```sh
-./mayapy -m pip install request
+./mayapy -m pip install requests
 ```
 
 # Dependencies and tools used
