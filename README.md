@@ -34,7 +34,7 @@ The issue reports can serve also as an Autodesk Maya Malware database with every
 
 # Recommendations
 
-The use of Security Tools for Autodesk® Maya® made developed by Autodesk, inc. is highly recommended to reduce risks.
+The use of Security Tools for Autodesk® Maya® developed by Autodesk, inc. is highly recommended to reduce risks.
 
 There are no known compatibility issues between the two plug-ins.
 
